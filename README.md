@@ -1,23 +1,43 @@
 # opencode-frugal
 
-[OpenCode](https://opencode.ai) plugin for spending fewer credits on OpenRouter models:
+[OpenCode](https://opencode.ai) plugin for finding cheap, capable models on OpenRouter and spending
+fewer credits on every request.
 
-- **`frugal_prices` tool** — look up current OpenRouter model prices (USD per million tokens), with a
-  programming/development category filter, coding-benchmark scores, and sorting by price, coding ability,
-  context, or name.
-- **`#floor` variant** — registers a `floor` variant on every OpenRouter model so you can select
-  `openrouter/<model>#floor` and make OpenRouter always route each request to the **cheapest provider**
-  for that model, instead of balancing price against speed and reliability.
+## Features
 
-Powered by the public [OpenRouter models API](https://openrouter.ai/api/v1/models) — no OpenRouter API key
-required for price lookups.
+### 1. Programming-only filtering
+
+Model discovery defaults to OpenRouter's **programming** category, so the list only contains models
+built for coding and development work — no chat toys, no image generators. Set `category: "all"` when
+you want to see everything, or pass any other [OpenRouter category](https://openrouter.ai/models).
+
+### 2. Prices, sorting, and coding benchmarks
+
+The `frugal_prices` tool shows every model's **input and output price in USD per million tokens**,
+plus:
+
+- **Sort by** `price` (cheapest blended cost first), `coding`, `context`, or `name`
+- **Coding column** — the Artificial Analysis coding index (0–100), or a Design Arena code ELO when
+  the index is not published, so cheap models can be compared by actual coding ability
+- **Context window** and tool-call support at a glance
+- Free-text **search** across model ids, names, and descriptions
+
+### 3. `#floor` variant — always route to the cheapest provider
+
+The plugin registers a `floor` variant on **every OpenRouter model**. Selecting
+`openrouter/<model>#floor` merges `provider: { sort: "price" }` into each request, which bypasses
+OpenRouter's default balanced routing and tries providers in price order (cheapest first). Same model,
+same quality, lowest provider price — an easy way to save credits.
+
+Powered by the public [OpenRouter models API](https://openrouter.ai/api/v1/models) — no OpenRouter
+API key required for price lookups.
 
 ## Install
 
 From GitHub:
 
 ```sh
-opencode plugin add github:YOUR_USERNAME/opencode-frugal
+opencode plugin add github:Haruki1707/opencode-frugal
 ```
 
 Or add it to `opencode.json(c)` directly:
@@ -25,14 +45,14 @@ Or add it to `opencode.json(c)` directly:
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugins": ["github:YOUR_USERNAME/opencode-frugal"]
+  "plugins": ["github:Haruki1707/opencode-frugal"]
 }
 ```
 
 Pin a branch, tag, or commit if you want a fixed version:
 
 ```sh
-opencode plugin add "github:YOUR_USERNAME/opencode-frugal#v0.1.0"
+opencode plugin add "github:Haruki1707/opencode-frugal#v0.1.0"
 ```
 
 ## Usage
@@ -47,15 +67,12 @@ Ask your agent things like:
 
 The agent calls `frugal_prices` with the filters:
 
-| Parameter  | Type                                    | Default         | Description                                                        |
-| ---------- | --------------------------------------- | --------------- | ------------------------------------------------------------------ |
-| `search`   | string                                  | —               | Case-insensitive substring match on id, name, and description      |
-| `category` | string                                  | `"programming"` | OpenRouter category filter; use `"all"` for every model            |
-| `sort`     | `price` \| `coding` \| `context` \| `name` | `"price"`    | Sort order                                                         |
-| `limit`    | number                                  | `15`            | Max rows (1–50)                                                    |
-
-The **Coding** column is the Artificial Analysis coding index (0–100), or a Design Arena code ELO when the
-index is not published for a model.
+| Parameter  | Type                                       | Default         | Description                                                   |
+| ---------- | ------------------------------------------ | --------------- | ------------------------------------------------------------- |
+| `search`   | string                                     | —               | Case-insensitive substring match on id, name, and description |
+| `category` | string                                     | `"programming"` | OpenRouter category filter; use `"all"` for every model       |
+| `sort`     | `price` \| `coding` \| `context` \| `name` | `"price"`       | Sort order                                                    |
+| `limit`    | number                                     | `15`            | Max rows (1–50)                                               |
 
 ### Floor routing
 
@@ -65,9 +82,7 @@ After installing, every OpenRouter model gains a `floor` variant. Select it like
 opencode run --model "openrouter/z-ai/glm-5.3-flash#floor" "Fix this bug"
 ```
 
-or pick `… #floor` in the `/models` selector. Requests then include
-`provider: { sort: "price" }`, which bypasses OpenRouter's default balanced routing and tries providers in
-price order (cheapest first).
+or pick `… #floor` in the `/models` selector.
 
 > **Note** — OpenRouter's native `:floor` slug is a superset of the price sort: it also makes
 > [flex service tier](https://openrouter.ai/docs/guides/features/service-tiers) endpoints eligible. The

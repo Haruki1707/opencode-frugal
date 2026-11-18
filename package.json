@@ -21,7 +21,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/YOUR_USERNAME/opencode-frugal.git"
+    "url": "git+https://github.com/Haruki1707/opencode-frugal.git"
   },
   "dependencies": {
     "@opencode/plugin": "latest"
