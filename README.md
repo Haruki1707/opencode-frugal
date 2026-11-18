@@ -9,13 +9,20 @@ variant to the cheapest provider.
 ### 1. Programming-only filtering
 
 Model discovery defaults to OpenRouter's **programming** category, so the list only contains models
-built for coding and development work — no chat toys, no image generators. Set `category: "all"` when
-you want to see everything, or pass any other [OpenRouter category](https://openrouter.ai/models).
+built for coding and development work — no chat toys, no image generators. This applies in two places:
+
+- The **`/models` picker** only lists OpenRouter models that belong to the programming category.
+- The `frugal_prices` tool defaults to the programming category; set `category: "all"` to see every
+  model, or pass any other [OpenRouter category](https://openrouter.ai/models).
+
+Models that don't appear in OpenRouter's catalog at all are left untouched, so custom or provider-side
+entries never disappear.
 
 ### 2. Prices, sorting, and coding benchmarks
 
-The `frugal_prices` tool shows every model's **input and output price in USD per million tokens**,
-plus:
+Model names in the **`/models` picker get their price appended**, e.g.
+`GLM 5.3 Flash · $0.150/$0.500` (input/output per million tokens), so cost is visible before you
+select. The `frugal_prices` tool adds on top of that:
 
 - **Sort by** `price` (cheapest blended cost first), `coding`, `context`, or `name`
 - **Coding column** — the Artificial Analysis coding index (0–100), or a Design Arena code ELO when
@@ -92,16 +99,20 @@ or pick `… #floor` in the `/models` selector.
     {
       "package": "opencode-frugal",
       "options": {
-        "floor": false
+        "floor": false,
+        "filter": false,
+        "prices": false
       }
     }
   ]
 }
 ```
 
-| Option  | Default | Description                                              |
-| ------- | ------- | -------------------------------------------------------- |
-| `floor` | `true`  | Register the `#floor` variant on every OpenRouter model. |
+| Option   | Default | Description                                                                                     |
+| -------- | ------- | ----------------------------------------------------------------------------------------------- |
+| `floor`  | `true`  | Register the `#floor` variant on every OpenRouter model.                                        |
+| `filter` | `true`  | Only show OpenRouter programming models in the `/models` picker.                                |
+| `prices` | `true`  | Append input/output prices to OpenRouter model names in the `/models` picker.                   |
 
 ## Development
 

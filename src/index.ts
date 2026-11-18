@@ -146,6 +146,9 @@ export default Plugin.define({
   id: "frugal",
   async setup(ctx) {
     const floorEnabled = ctx.options.floor !== false
+    const filterEnabled = ctx.options.filter !== false
+    const pricesEnabled = ctx.options.prices !== false
+    let cleanup: (() => void) | undefined
 
     // --- #floor variant on every OpenRouter model --------------------------
     // Selecting `openrouter/<model>#floor` merges
@@ -173,6 +176,62 @@ export default Plugin.define({
           console.log(`[opencode-frugal] registered #floor variant on ${touched} openrouter model(s)`)
         }
       })
+    }
+
+    // --- model picker: programming filter + prices in names -----------------
+    // The OpenRouter model list itself is filtered to the programming category
+    // and each model's display name gets its input/output price appended, e.g.
+    // "GLM 5.3 Flash · $0.15/$0.50". Models missing from OpenRouter's catalog
+    // are left untouched.
+    if (filterEnabled || pricesEnabled) {
+      const catalog: {
+        programming: Set<string>
+        known: Set<string>
+        prices: Map<string, { in: number | undefined; out: number | undefined }>
+      } = { programming: new Set(), known: new Set(), prices: new Map() }
+
+      const refresh = async () => {
+        const [all, programming] = await Promise.all([fetchModels("all"), fetchModels("programming")])
+        catalog.programming = new Set(programming.map((m) => m.id))
+        catalog.known = new Set(all.map((m) => m.id))
+        catalog.prices = new Map(
+          all.map((m) => [
+            m.id,
+            { in: perMillion(m.pricing?.prompt), out: perMillion(m.pricing?.completion) },
+          ]),
+        )
+      }
+
+      await refresh().catch((err) => {
+        console.error("[opencode-frugal] initial model catalog fetch failed:", err)
+      })
+
+      await ctx.model.transform((editor) => {
+        // Never filter when the catalog failed to load: an empty programming
+        // set would otherwise remove every OpenRouter model.
+        for (const model of editor.list("openrouter")) {
+          if (filterEnabled && catalog.known.has(model.id) && !catalog.programming.has(model.id)) {
+            editor.remove(model.providerID, model.id)
+            continue
+          }
+          if (pricesEnabled) {
+            const price = catalog.prices.get(model.id)
+            if (price && (price.in !== undefined || price.out !== undefined)) {
+              const label = `${fmtUSD(price.in)}/${fmtUSD(price.out)}`
+              editor.update(model.providerID, model.id, (m) => {
+                m.name = `${m.name} · ${label}`
+              })
+            }
+          }
+        }
+      })
+
+      const timer = setInterval(() => {
+        void refresh()
+          .then(() => ctx.model.reload())
+          .catch((err) => console.error("[opencode-frugal] model catalog refresh failed:", err))
+      }, 60 * 60 * 1000)
+      cleanup = () => clearInterval(timer)
     }
 
     // --- frugal_prices tool ------------------------------------------------
@@ -306,5 +365,7 @@ export default Plugin.define({
         },
       })
     })
+
+    return cleanup
   },
 })

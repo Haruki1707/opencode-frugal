@@ -1,6 +1,6 @@
 {
   "name": "opencode-frugal",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "OpenCode plugin: OpenRouter model prices, coding-focused filtering, and a #floor variant that routes requests to the cheapest provider.",
   "type": "module",
   "license": "MIT",
