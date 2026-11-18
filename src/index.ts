@@ -139,6 +139,92 @@ function blendedCost(row: Row): number {
 }
 
 // ---------------------------------------------------------------------------
+// Programming-model sources
+// Two independent sources for "programming models" on OpenRouter:
+//   frontend: the tag-based list the website itself uses (broader, ~48, undocumented)
+//   api:      the documented curated shortlist (~20, stable)
+// Both are unioned so one failing never removes models the other still knows
+// about; a total failure keeps the last good set (fail open).
+// ---------------------------------------------------------------------------
+
+const SOURCES = {
+  frontend: "https://openrouter.ai/api/frontend/v1/models/find?active=true&categories=programming",
+  api: "https://openrouter.ai/api/v1/models?category=programming",
+} as const
+
+type SourceName = keyof typeof SOURCES
+type SourceStatus = { ok: boolean; count: number; at: string; error?: string }
+
+const status: Record<SourceName, SourceStatus> = {
+  frontend: { ok: false, count: 0, at: "", error: "not fetched yet" },
+  api: { ok: false, count: 0, at: "", error: "not fetched yet" },
+}
+
+function extract(name: SourceName, body: unknown): Set<string> {
+  const ids = new Set<string>()
+  const data = (body as { data?: Record<string, unknown> })?.data
+  if (name === "frontend") {
+    for (const model of (data as { models?: { slug?: unknown }[] } | undefined)?.models ?? []) {
+      if (typeof model.slug === "string") ids.add(model.slug)
+    }
+  } else {
+    for (const model of (data as { id?: unknown }[] | undefined) ?? []) {
+      if (typeof model.id === "string") ids.add(model.id)
+    }
+  }
+  return ids
+}
+
+async function loadSource(name: SourceName): Promise<Set<string>> {
+  const at = new Date().toISOString()
+  try {
+    const response = await fetch(SOURCES[name], { headers: { accept: "application/json" } })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const ids = extract(name, await response.json())
+    if (ids.size === 0) throw new Error("empty model list")
+    status[name] = { ok: true, count: ids.size, at }
+    return ids
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    status[name] = { ok: false, count: 0, at, error: message }
+    console.error(`[opencode-frugal] source ${name} failed: ${message}`)
+    return new Set()
+  }
+}
+
+interface CostTier {
+  input?: number
+  output?: number
+}
+
+/** Compact price tag from OpenCode's own per-million USD cost tiers, e.g. "$0.15/$0.50". */
+function priceTag(cost: readonly CostTier[] | undefined): string {
+  const tier = cost?.[0]
+  if (!tier) return ""
+  const input = Number(tier.input ?? 0)
+  const output = Number(tier.output ?? 0)
+  if (input === 0 && output === 0) return "free"
+  const fmt = (n: number) => String(n >= 100 ? Math.round(n) : Number(n.toFixed(3)))
+  // "+" marks a model whose price rises above a context-length tier.
+  return `$${fmt(input)}/$${fmt(output)}${(cost?.length ?? 0) > 1 ? "+" : ""}`
+}
+
+function report(keep: Set<string>, shown: number): string {
+  const lines = ["**opencode-frugal — programming filter status**", ""]
+  for (const name of Object.keys(status) as SourceName[]) {
+    const s = status[name]
+    const label = name === "api" ? "public api" : name
+    lines.push(
+      `- ${label}: ${s.ok ? "ok" : "FAILED"} — ${s.count} tagged${s.at ? `, ${new Date(s.at).toLocaleString()}` : ""}${s.error && !s.ok ? ` (${s.error})` : ""}`,
+    )
+  }
+  lines.push("", `Union: ${keep.size} programming models`, `Shown in /models: ${shown}`)
+  if (keep.size === 0) lines.push("", "Nothing fetched yet, so no filtering is applied.")
+  return lines.join("\n")
+}
+
+
+// ---------------------------------------------------------------------------
 // Plugin
 // ---------------------------------------------------------------------------
 
@@ -179,58 +265,61 @@ export default Plugin.define({
     }
 
     // --- model picker: programming filter + prices in names -----------------
-    // The OpenRouter model list itself is filtered to the programming category
-    // and each model's display name gets its input/output price appended, e.g.
-    // "GLM 5.3 Flash · $0.15/$0.50". Models missing from OpenRouter's catalog
-    // are left untouched.
+    // Filtering unions both programming sources (see SOURCES above) so the
+    // picker matches what the OpenRouter website shows. Prices come from
+    // OpenCode's own cost data, so no extra fetch is needed for them.
     if (filterEnabled || pricesEnabled) {
-      const catalog: {
-        programming: Set<string>
-        known: Set<string>
-        prices: Map<string, { in: number | undefined; out: number | undefined }>
-      } = { programming: new Set(), known: new Set(), prices: new Map() }
+      let keep = new Set<string>()
 
       const refresh = async () => {
-        const [all, programming] = await Promise.all([fetchModels("all"), fetchModels("programming")])
-        catalog.programming = new Set(programming.map((m) => m.id))
-        catalog.known = new Set(all.map((m) => m.id))
-        catalog.prices = new Map(
-          all.map((m) => [
-            m.id,
-            { in: perMillion(m.pricing?.prompt), out: perMillion(m.pricing?.completion) },
-          ]),
-        )
+        const loaded = await Promise.all((Object.keys(SOURCES) as SourceName[]).map(loadSource))
+        const union = new Set<string>()
+        for (const ids of loaded) for (const id of ids) union.add(id)
+
+        // Fail open: keep the last good set rather than wiping the model list.
+        if (union.size > 0) keep = union
+        else if (keep.size > 0) {
+          console.error("[opencode-frugal] both sources failed, keeping last good list")
+        }
+
+        await ctx.model.reload()
       }
 
-      await refresh().catch((err) => {
-        console.error("[opencode-frugal] initial model catalog fetch failed:", err)
-      })
+      await refresh()
 
       await ctx.model.transform((editor) => {
-        // Never filter when the catalog failed to load: an empty programming
-        // set would otherwise remove every OpenRouter model.
         for (const model of editor.list("openrouter")) {
-          if (filterEnabled && catalog.known.has(model.id) && !catalog.programming.has(model.id)) {
-            editor.remove(model.providerID, model.id)
-            continue
-          }
-          if (pricesEnabled) {
-            const price = catalog.prices.get(model.id)
-            if (price && (price.in !== undefined || price.out !== undefined)) {
-              const label = `${fmtUSD(price.in)}/${fmtUSD(price.out)}`
-              editor.update(model.providerID, model.id, (m) => {
-                m.name = `${m.name} · ${label}`
-              })
-            }
-          }
+          editor.update(model.providerID, model.id, (draft) => {
+            // Disable instead of remove: recoverable and survives refreshes.
+            if (filterEnabled && keep.size > 0) draft.enabled = keep.has(model.id)
+            if (!pricesEnabled) return
+            // Rebuild the name from the catalog's own name so replays never stack tags.
+            const base = draft.name.replace(/\s+·\s+(free|\$[^\s]+)$/, "")
+            const tag = priceTag(draft.cost)
+            draft.name = tag ? `${base} · ${tag}` : base
+          })
         }
       })
 
-      const timer = setInterval(() => {
-        void refresh()
-          .then(() => ctx.model.reload())
-          .catch((err) => console.error("[opencode-frugal] model catalog refresh failed:", err))
-      }, 60 * 60 * 1000)
+      await ctx.command.transform((editor) => {
+        editor.add({
+          name: "frugal-status",
+          description: "Re-check the OpenRouter programming-model sources and show their status",
+          execute: async ({ sessionID }) => {
+            await refresh()
+            const models = (await ctx.model.list()) as unknown as {
+              data?: { providerID?: string; enabled?: boolean }[]
+            }
+            const list = Array.isArray(models) ? models : (models?.data ?? [])
+            const shown = list.filter(
+              (model) => model.providerID === "openrouter" && model.enabled !== false,
+            ).length
+            await ctx.session.synthetic({ sessionID, text: report(keep, shown) })
+          },
+        })
+      })
+
+      const timer = setInterval(() => void refresh().catch(console.error), 6 * 60 * 60 * 1000)
       cleanup = () => clearInterval(timer)
     }
 

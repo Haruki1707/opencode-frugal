@@ -11,18 +11,22 @@ variant to the cheapest provider.
 Model discovery defaults to OpenRouter's **programming** category, so the list only contains models
 built for coding and development work — no chat toys, no image generators. This applies in two places:
 
-- The **`/models` picker** only lists OpenRouter models that belong to the programming category.
+- The **`/models` picker** only shows OpenRouter programming models. Two sources are **unioned** to
+  build that list: the tag-based list the [openrouter.ai](https://openrouter.ai) website itself uses
+  (~48 models) and the documented API's curated programming category (~20). If one source fails, the
+  other still applies; if both fail, the last good list is kept (fail open). Models are **disabled**,
+  never removed, so nothing is lost permanently.
 - The `frugal_prices` tool defaults to the programming category; set `category: "all"` to see every
   model, or pass any other [OpenRouter category](https://openrouter.ai/models).
 
-Models that don't appear in OpenRouter's catalog at all are left untouched, so custom or provider-side
-entries never disappear.
+Run `/frugal-status` any time to re-check both sources and see how many models each tagged.
 
 ### 2. Prices, sorting, and coding benchmarks
 
 Model names in the **`/models` picker get their price appended**, e.g.
-`GLM 5.3 Flash · $0.150/$0.500` (input/output per million tokens), so cost is visible before you
-select. The `frugal_prices` tool adds on top of that:
+`GLM 5.3 Flash · $0.15/$0.50` (input/output per million tokens, taken from OpenCode's own cost
+data — a `+` suffix marks models whose price rises with a context-length tier, `free` means $0).
+The `frugal_prices` tool adds on top of that:
 
 - **Sort by** `price` (cheapest blended cost first), `coding`, `context`, or `name`
 - **Coding column** — the Artificial Analysis coding index (0–100), or a Design Arena code ELO when
