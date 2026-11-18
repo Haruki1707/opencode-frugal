@@ -1,7 +1,8 @@
 # opencode-frugal
 
-[OpenCode](https://opencode.ai) plugin for finding cheap, capable models on OpenRouter and spending
-fewer credits on every request.
+[OpenCode](https://opencode.ai) plugin for OpenRouter model discovery: filter to programming models,
+sort and compare their prices, and — when you want it — route every request through the `#floor`
+variant to the cheapest provider.
 
 ## Features
 
