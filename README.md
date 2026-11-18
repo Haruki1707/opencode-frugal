@@ -50,12 +50,6 @@ Or add it to `opencode.json(c)` directly:
 }
 ```
 
-Pin a branch, tag, or commit if you want a fixed version:
-
-```sh
-opencode plugin add "github:Haruki1707/opencode-frugal#v0.1.0"
-```
-
 ## Usage
 
 ### Prices
